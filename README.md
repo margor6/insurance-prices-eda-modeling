@@ -32,7 +32,7 @@ The analysis uses the personal health dataset, which contains data for **1,338 p
 * **Smoking Impact:** Being a smoker is the strongest predictor of higher insurance charges.
 * **Age Factor:** Charges generally increase with age, showing a linear trend for non-smokers.
 * **BMI Correlation:** High BMI significantly increases costs, but primarily for smokers (interaction effect).
-* **Data Limitations:** The analysis deduces that unobserved variables (likely chronic diseases or family's medical history) play a major role in pricing, creating distinct clusters in the data that simple demographic variables cannot fully explain.
+* **Data Limitations:** The analysis deduces that unobserved variables (likely chronic diseases or family's medical history) play a major role in pricing, creating distinct clusters in the data that variables included in the dataset cannot fully explain.
 
 <img width="1083" height="507" alt="image" src="https://github.com/user-attachments/assets/c1fc5b85-715b-4416-9a0a-f64b657b5012" />
 
