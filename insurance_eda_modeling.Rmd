@@ -1,7 +1,7 @@
 ---
-title: "Medical Insurance Prices — Exploratory Data Analysis"
+title: "Medical Insurance Prices - EDA & Econometric Modeling"
 author: "Marcin Górski"
-date: "2026-01-15"
+date: "2026-06-16"
 output:
   html_document:
     toc: true
@@ -16,13 +16,16 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  echo    = TRUE,
-  message = FALSE,
-  warning = FALSE,
+  echo       = TRUE,
+  message    = FALSE,
+  warning    = FALSE,
   fig.width  = 9,
   fig.height = 5,
-  dpi = 150
+  dpi        = 150
 )
+
+# Set locale for proper rendering if needed
+Sys.setlocale("LC_ALL", "en_US.UTF-8")
 
 library(psych)
 library(ggplot2)
@@ -33,6 +36,8 @@ library(gridExtra)
 library(nortest)
 library(car)
 library(PMCMRplus)
+library(lmtest)
+library(broom)
 
 # ── Shared theme ──────────────────────────────────────────────────────────────
 theme_eda <- theme_minimal(base_size = 13) +
@@ -43,34 +48,27 @@ theme_eda <- theme_minimal(base_size = 13) +
     axis.text        = element_text(color = "grey40"),
     panel.grid.minor = element_blank(),
     panel.grid.major = element_line(color = "grey92"),
-    strip.text       = element_text(face = "bold", color = "grey20"),
+    strip.text       = element_text(face = "bold", color = "darkgrey"),
     legend.position  = "right",
     plot.margin      = margin(10, 10, 10, 10)
   )
-
-# ── Palette ───────────────────────────────────────────────────────────────────
-PAL_BLUE   <- "#4E84C4"
-PAL_GREEN  <- "#52B788"
-PAL_ORANGE <- "#E07B54"
-PAL_SMOKE  <- c("yes" = "#E07B54", "no" = "#4E84C4")
-PAL_BMI    <- c("Low" = "#74C2E1", "Normal" = "#52B788", "High" = "#E07B54")
 ```
 
 ---
 
+# Exploratory Data Analysis (EDA)
+
 ## Data Overview
 
 ```{r load_data}
-medins <- read.csv("D:/Studia/WdAD/EDA/medical-charges.csv")
+medins <- read.csv("medical-charges.csv")
 
-medins$sex          <- as.factor(medins$sex)
-medins$smoker       <- as.factor(medins$smoker)
-medins$region       <- as.factor(medins$region)
+medins$sex    <- as.factor(medins$sex)
+medins$smoker <- as.factor(medins$smoker)
+medins$region <- as.factor(medins$region)
 
 head(medins, 3)
-tail(medins, 3)
 str(medins)
-psych::describe(medins)
 ```
 
 The dataset contains **`r nrow(medins)` observations** across **7 variables** describing individual medical insurance charges. Predictors include:
@@ -78,7 +76,7 @@ The dataset contains **`r nrow(medins)` observations** across **7 variables** de
 - **Numeric:** age, BMI, number of children
 - **Categorical:** sex, smoker status, region
 
-The goal of this analysis is to explore how each of these characteristics relates to insurance charges.
+The goal of this analysis is to explore how each of these characteristics relates to insurance charges and to build an econometric model explaining these costs.
 
 ---
 
@@ -88,7 +86,7 @@ The goal of this analysis is to explore how each of these characteristics relate
 md.pattern(medins, rotate.names = TRUE)
 ```
 
-No missing values are present in any column — the dataset is complete.
+No missing values are present in any column - the dataset is complete.
 
 ---
 
@@ -97,12 +95,12 @@ No missing values are present in any column — the dataset is complete.
 ### Categorical Variables
 
 ```{r cat_plots, fig.height=4}
-plot_bar_cat <- function(data, var, title, pal = PAL_BLUE) {
+plot_bar_cat <- function(data, var, title) {
   ggplot(data, aes(x = .data[[var]])) +
-    geom_bar(fill = pal, color = "white", width = 0.6) +
+    geom_bar(fill = "lightblue", color = "blue", width = 0.6) +
     geom_text(stat = "count",
               aes(label = after_stat(count)),
-              vjust = -0.5, color = "grey35", size = 3.5) +
+              vjust = -0.5, color = "grey", size = 3.5) +
     labs(title = title, x = NULL, y = "Count") +
     theme_eda
 }
@@ -116,11 +114,7 @@ grid.arrange(
 )
 ```
 
-```{r sex_smoker_table}
-table(medins[, c("sex", "smoker")])
-```
-
-Sex and region are well balanced. Smokers are a clear minority, though not so rare as to be edge cases. Among smokers, males are slightly more represented: **`r round(sum(medins$sex=="male" & medins$smoker=="yes") / sum(medins$sex=="male") * 100, 2)`%** of men smoke versus **`r round(sum(medins$sex=="female" & medins$smoker=="yes") / sum(medins$sex=="female") * 100, 2)`%** of women. Whether this difference is statistically significant will be tested later.
+Sex and region are well balanced. Smokers are a clear minority. Among smokers, males are slightly more represented: **`r round(sum(medins$sex=="male" & medins$smoker=="yes") / sum(medins$sex=="male") * 100, 2)`%** of men smoke versus **`r round(sum(medins$sex=="female" & medins$smoker=="yes") / sum(medins$sex=="female") * 100, 2)`%** of women. Whether this difference is statistically significant will be tested later.
 
 ---
 
@@ -128,55 +122,55 @@ Sex and region are well balanced. Smokers are a clear minority, though not so ra
 
 ```{r numeric_plots, fig.height=8}
 p_age_hist <- ggplot(medins, aes(x = age)) +
-  geom_histogram(bins = 10, fill = PAL_GREEN, color = "white") +
-  labs(title = "Age — Histogram", x = "Age (years)", y = "Count") +
+  geom_histogram(bins = 10, fill = "lightgreen", color = "grey30") +
+  labs(title = "Age - Histogram", x = "Age (years)", y = "Count") +
   theme_eda
 
 p_age_box <- ggplot(medins, aes(x = age)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.7) +
-  labs(title = "Age — Boxplot", x = "Age (years)") +
+  geom_boxplot(fill = "lightgreen", color = "grey30",
+               outlier.color = "orange", outlier.alpha = 0.7) +
+  labs(title = "Age - Boxplot", x = "Age (years)") +
   theme_eda +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 
 p_bmi_hist <- ggplot(medins, aes(x = bmi)) +
-  geom_histogram(bins = 10, fill = PAL_GREEN, color = "white") +
-  labs(title = "BMI — Histogram", x = "BMI", y = "Count") +
+  geom_histogram(bins = 10, fill = "lightgreen", color = "grey30") +
+  labs(title = "BMI - Histogram", x = "BMI", y = "Count") +
   theme_eda
 
 p_bmi_box <- ggplot(medins, aes(x = bmi)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.7) +
-  labs(title = "BMI — Boxplot", x = "BMI") +
-  theme_eda +
-  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
-
-p_ch_bar <- ggplot(medins, aes(x = factor(children))) +
-  geom_bar(fill = PAL_GREEN, color = "white", width = 0.6) +
-  geom_text(stat = "count", aes(label = after_stat(count)),
-            vjust = -0.5, color = "grey35", size = 3.5) +
-  labs(title = "Children — Count", x = "Number of Children", y = "Count") +
-  theme_eda
-
-p_ch_box <- ggplot(medins, aes(x = children)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.7) +
-  labs(title = "Children — Boxplot", x = "Number of Children") +
+  geom_boxplot(fill = "lightgreen", color = "grey30",
+               outlier.color = "orange", outlier.alpha = 0.7) +
+  labs(title = "BMI - Boxplot", x = "BMI") +
   theme_eda +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
 
 p_chg_hist <- ggplot(medins, aes(x = charges)) +
-  geom_histogram(bins = 10, fill = PAL_GREEN, color = "white") +
+  geom_histogram(bins = 10, fill = "lightgreen", color = "grey30") +
   scale_x_continuous(labels = scales::dollar_format()) +
-  labs(title = "Charges — Histogram", x = "Annual Charges (USD)", y = "Count") +
+  labs(title = "Charges - Histogram", x = "Annual Charges (USD)", y = "Count") +
   theme_eda +
   theme(axis.text.x = element_text(angle = 30, hjust = 1))
 
+p_ch_bar <- ggplot(medins, aes(x = factor(children))) +
+  geom_bar(fill = "lightgreen", color = "white", width = 0.6) +
+  geom_text(stat = "count", aes(label = after_stat(count)),
+            vjust = -0.5, color = "grey30", size = 3.5) +
+  labs(title = "Children - Count", x = "Number of Children", y = "Count") +
+  theme_eda
+
+p_ch_box <- ggplot(medins, aes(x = children)) +
+  geom_boxplot(fill = "lightgreen", color = "grey30",
+               outlier.color = "orange", outlier.alpha = 0.7) +
+  labs(title = "Children - Boxplot", x = "Number of Children") +
+  theme_eda +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+
 p_chg_box <- ggplot(medins, aes(x = charges)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.7) +
+  geom_boxplot(fill = "lightgreen", color = "grey30",
+               outlier.color = "orange", outlier.alpha = 0.7) +
   scale_x_continuous(labels = scales::dollar_format()) +
-  labs(title = "Charges — Boxplot", x = "Annual Charges (USD)") +
+  labs(title = "Charges - Boxplot", x = "Annual Charges (USD)") +
   theme_eda +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
         axis.text.x = element_text(angle = 30, hjust = 1))
@@ -184,7 +178,7 @@ p_chg_box <- ggplot(medins, aes(x = charges)) +
 grid.arrange(
   p_age_hist, p_age_box,
   p_bmi_hist, p_bmi_box,
-  p_ch_bar,   p_ch_box,
+  p_ch_bar, p_ch_box,
   p_chg_hist, p_chg_box,
   nrow = 4, ncol = 2
 )
@@ -197,10 +191,10 @@ cat("\nChildren:\n");quantile(medins$children, probs = c(0, .01, .25, .5, .75, .
 cat("\nCharges:\n"); quantile(medins$charges,  probs = c(0, .01, .25, .5, .75, .95, .99, 1))
 ```
 
-- **Age** is approximately uniformly distributed with no outliers.  
-- **BMI** is roughly normal with a few high-end outliers; fewer than 5% of individuals exceed a BMI of 41.  
-- **Children** is strongly right-skewed — only 5% have more than 3 children; the maximum is 5.  
-- **Charges** are also right-skewed with notable outliers. Only 1% pay above ~$48,500, while the maximum reaches nearly $64,000.
+- **Age** is approximately uniformly distributed.  
+- **BMI** is roughly normal with a few high-end outliers; fewer than 5% of individuals exceed a BMI of 41.
+- **Children** is strongly right-skewed - less than 5% have more than 3 children; the maximum is 5.
+- **Charges** are strongly right-skewed with notable outliers. Only 1% pay above $48,500, while the maximum reaches nearly 64,000.
 
 ---
 
@@ -217,22 +211,21 @@ cor_matrix <- cor(
 corrplot(cor_matrix,
          method      = "color",
          type        = "upper",
-         addCoef.col = "grey20",
+         addCoef.col = "darkgrey",
          number.cex  = 0.85,
-         tl.col      = "grey20",
+         tl.col      = "darkgrey",
          tl.srt      = 30,
-         col         = colorRampPalette(c(PAL_BLUE, "white", PAL_ORANGE))(200),
          diag        = FALSE,
          cl.pos      = "b")
 ```
 
-The matrix reveals a **strong positive association between age and charges**, and an equally strong link between **smoker status and charges**. Relationships among the remaining variables are weak, with no notable negative correlations.
+The matrix reveals a **strong positive association between age and charges**, and an similarily strong link between **smoker status and charges**. Relationships among the remaining variables are weak, with no negative correlations.
 
 ---
 
-# Exploring Relationships
+## Exploring Relationships
 
-## BMI
+### BMI
 
 To examine the relationship between body mass and other variables, I add a new column `bmi_category`: **Low** (BMI < 18.5), **Normal**, and **High** (BMI > 30, i.e. obese).
 
@@ -248,7 +241,7 @@ medins$bmi_category <- factor(
 plot_fill_bar <- function(data, x_var, title, x_lab) {
   ggplot(data, aes(x = .data[[x_var]], fill = bmi_category)) +
     geom_bar(color = "white", position = "fill") +
-    scale_fill_manual(values = PAL_BMI) +
+    scale_fill_manual(values = c("Low" = "blue", "Normal" = "lightgreen", "High" = "orange")) +
     scale_y_continuous(labels = scales::percent_format()) +
     labs(title = title, x = x_lab, y = "Share", fill = "BMI") +
     theme_eda
@@ -275,7 +268,7 @@ for (r in levels(medins$region)) {
 }
 ```
 
-The Lilliefors test (preferred over Shapiro-Wilk for large samples) finds no evidence against normality of BMI in any region. Now checking homogeneity of variance:
+The Lilliefors test finds no evidence against normality of BMI in any region. Now checking homogeneity of variance:
 
 ```{r bartlett}
 test_bartlett <- bartlett.test(bmi ~ region, data = medins)
@@ -294,13 +287,11 @@ The p-value is very small, so I move to post-hoc testing with the **Games-Howell
 gamesHowellTest(bmi ~ region, data = na.omit(medins[, c("bmi", "region")]))
 ```
 
-The results confirm the pattern visible in the chart. Individuals from the **Southeast** have a significantly different BMI from all other regions, and the **Southwest** also differs significantly from both northern regions. The direction is clear from the stacked bar chart — the Southeast has the highest proportion of obese individuals, the Southwest is intermediate, and northern regions have the most people in the normal BMI range (and a higher share of underweight individuals).
+The results confirm the pattern visible in the chart. Individuals from the **Southeast** have a significantly different BMI from all other regions. The Southeast has the highest proportion of obese individuals, while northern regions have the most people in the normal BMI range.
 
----
+### Smoker Status vs. Sex
 
-## Smoker Status vs. Sex
-
-Returning to the earlier question — is the higher smoking rate among men statistically significant? I'll use a one-sided two-proportion test. Sample sizes are more than adequate, and the empirical proportions (~17% and ~23%) are well within the usable range.
+Returning to the earlier question - is the higher smoking rate among men statistically significant? I'll use a one-sided two-proportion test.
 
 ```{r prop_test_sex}
 wektor_palacy <- medins %>%
@@ -318,44 +309,27 @@ odsetek_palacych
 
 The test confirms that **the proportion of smokers is significantly higher among men** (p = `r round(odsetek_palacych$p.value, 4)`).
 
----
+### Smoker Status vs. Age & BMI
 
-## Smoker Status vs. Age
-
-```{r smoker_age_plot}
-ggplot(medins, aes(x = age, fill = smoker)) +
+```{r smoker_age_plot, fig.height=4}
+p_smoker_age <- ggplot(medins, aes(x = age, fill = smoker)) +
   geom_bar(color = "white", position = "fill") +
-  scale_fill_manual(values = PAL_SMOKE) +
+  scale_fill_manual(values = c("yes" = "orange", "no" = "blue")) +
   scale_y_continuous(labels = scales::percent_format()) +
-  labs(title = "Share of Smokers by Age",
-       x = "Age", y = "Share", fill = "Smoker") +
+  labs(title = "Share of Smokers by Age", x = "Age", y = "Share", fill = "Smoker") +
   theme_eda
-```
 
-The correlation matrix showed no relationship between smoking and age, and this 100% stacked bar chart confirms it. While the proportion approaches 50% for some middle-aged groups, no consistent trend is visible.
-
----
-
-## Smoker Status vs. BMI
-
-```{r smoker_bmi_plot}
-ggplot(medins, aes(x = bmi_category, fill = smoker)) +
+p_smoker_bmi <- ggplot(medins, aes(x = bmi_category, fill = smoker)) +
   geom_bar(color = "white", position = "fill") +
-  scale_fill_manual(values = PAL_SMOKE) +
+  scale_fill_manual(values = c("yes" = "orange", "no" = "blue")) +
   scale_y_continuous(labels = scales::percent_format()) +
-  labs(title = "Smoking Rate by BMI Category",
-       x = "BMI Category", y = "Share", fill = "Smoker") +
+  labs(title = "Smoking Rate by BMI Category", x = "BMI", y = "Share", fill = "Smoker") +
   theme_eda
+
+grid.arrange(p_smoker_age, p_smoker_bmi, nrow = 1)
 ```
 
-Visually, the Low BMI group appears to have the highest smoking rate. However, let's check the counts:
-
-```{r bmi_counts}
-medins %>% filter(bmi_category == "Low")  %>% count(smoker)
-medins %>% filter(bmi_category == "High") %>% count(smoker)
-```
-
-Only 20 individuals fall in the Low category — too few for a reliable asymptotic test. I'll compare **Normal vs. High** instead:
+The correlation matrix showed no relationship between smoking and age, and this 100% stacked bar chart confirms it. Regarding BMI, we can formally test if Normal and High BMI groups differ in smoking rates:
 
 ```{r prop_test_bmi}
 palacze_bmi <- medins %>%
@@ -374,27 +348,9 @@ odsetek_bmi
 
 The smoking rates in these two groups differ by barely 1 percentage point, so the result is unsurprising: p = `r round(odsetek_bmi$p.value, 4)`. No significant relationship.
 
----
+### What Drives Insurance Charges?
 
-## Smoker Status vs. Number of Children
-
-```{r smoker_children_plot}
-ggplot(medins, aes(x = factor(children), fill = smoker)) +
-  geom_bar(color = "white", position = "fill") +
-  scale_fill_manual(values = PAL_SMOKE) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  labs(title = "Smoking Rate by Number of Children",
-       x = "Number of Children", y = "Share", fill = "Smoker") +
-  theme_eda
-```
-
-The lowest smoking share appears in the 4–5 children group, but those groups are very small. No meaningful trend is evident here.
-
----
-
-# What Drives Insurance Charges?
-
-## Age vs. Charges
+#### Age vs. Charges
 
 ```{r age_charges_plot}
 ggplot(medins, aes(x = age, y = charges)) +
@@ -407,30 +363,10 @@ ggplot(medins, aes(x = age, y = charges)) +
 
 The scatter plot reveals a near-linear trend at the bottom, but for each age a substantial group pays far higher premiums. These outlying points also form two less distinct upward bands. Smoker status is likely a key factor.
 
----
-
-## Age + Smoker Status vs. Charges
-
-```{r age_smoker_charges_plot}
-ggplot(medins, aes(x = age, y = charges, color = smoker)) +
-  geom_point(size = 2.5, alpha = 0.7) +
-  scale_color_manual(values = PAL_SMOKE) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Age vs. Charges, coloured by Smoker Status",
-       x = "Age", y = "Annual Charges (USD)", color = "Smoker") +
-  theme_eda
-```
-
-The theory holds. The bottom band is exclusively **non-smokers**, and the top band is almost exclusively **smokers**. A middle band contains a mix of both. Can BMI explain this middle group?
-
----
-
-## Age + Smoker Status + BMI vs. Charges
-
 ```{r age_bmi_smoker_charges_plot, fig.height=4.5}
 ggplot(medins, aes(x = age, y = charges, color = smoker)) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_manual(values = PAL_SMOKE) +
+  geom_point(size = 2, alpha = 0.6) +
+  scale_color_manual(values = c("yes" = "orange", "no" = "blue")) +
   scale_y_continuous(labels = scales::dollar_format()) +
   facet_wrap(~bmi_category, ncol = 3) +
   labs(title = "Age vs. Charges by BMI Category and Smoker Status",
@@ -438,255 +374,250 @@ ggplot(medins, aes(x = age, y = charges, color = smoker)) +
   theme_eda
 ```
 
-This sheds further light on the structure. Smokers with **normal BMI** tend to fall in the middle band, while **obese smokers** dominate the top band — and all non-smokers remain in the lower- and middle bands. This suggests that obesity and smoking may interact multiplicatively in pricing.
 
-To test whether the "penalties" for smoking and obesity compound, I attempt a two-way ANOVA. First, the assumptions:
+Those scatter plots shed further light at the structure and reveal three distinct groups:
+1. The bottom band is exclusively **non-smokers**. 
+2. The top band is almost exclusively **obese smokers**. 
+3. The middle band contains a mix of both, largely **smokers with normal BMI**.
 
-```{r two_way_anova_assumptions}
-medins %>% group_by(smoker, bmi_category) %>% count()
+This implies that obesity and smoking interact powerfully in pricing. 
 
-tapply(
-  medins$charges[medins$bmi_category == "Low"],
-  medins$smoker[medins$bmi_category == "Low"],
-  lillie.test
-)
+#### Other Factors vs. Charges
 
-leveneTest(charges ~ smoker * bmi_category, data = medins)
-```
-
-Unfortunately the assumptions are violated: Lilliefors indicates non-normality, the Low BMI group is too small to rely on the CLT, and Levene's test (used instead of Bartlett's because of non-normality) confirms heteroscedasticity. A two-way ANOVA is therefore not appropriate here; the modelling section will address this differently.
-
----
-
-## Number of Children vs. Charges
-
-```{r children_charges_plot}
-ggplot(medins, aes(x = as.factor(children), y = charges)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.6) +
+```{r children_sex_region_charges, fig.height=8}
+p_ch_chg <- ggplot(medins, aes(x = as.factor(children), y = charges)) +
+  geom_boxplot(fill = "lightgreen", color = "grey30", outlier.color = "orange") +
   scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Charges by Number of Children",
-       x = "Number of Children", y = "Annual Charges (USD)") +
+  labs(title = "Charges by Children", x = "Children", y = "Charges") +
   theme_eda
-```
 
-Medians are similar across groups, though boxes for higher child counts sit slightly higher. The notably low median for 5 children is unsurprising given only 18 such observations exist.
-
----
-
-## Region vs. Charges
-
-```{r region_charges_plot}
-ggplot(medins, aes(x = region, y = charges)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.6) +
+p_reg_chg <- ggplot(medins, aes(x = region, y = charges)) +
+  geom_boxplot(fill = "lightgreen", color = "grey30", outlier.color = "orange") +
   scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Charges by Region",
-       x = "Region", y = "Annual Charges (USD)") +
+  labs(title = "Charges by Region", x = "Region", y = "Charges") +
   theme_eda
-```
 
-The Southeast box reaches the highest, but recall that this region also has the highest obesity rate — so the elevated charges are likely driven by BMI rather than region per se.
-
----
-
-## Sex vs. Charges
-
-```{r sex_charges_plot}
-ggplot(medins, aes(x = sex, y = charges)) +
-  geom_boxplot(fill = PAL_GREEN, color = "grey30",
-               outlier.color = PAL_ORANGE, outlier.alpha = 0.6) +
+p_sex_chg <- ggplot(medins, aes(x = sex, y = charges)) +
+  geom_boxplot(fill = "lightgreen", color = "grey30", outlier.color = "orange") +
   scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Charges by Sex",
-       x = "Sex", y = "Annual Charges (USD)") +
+  labs(title = "Charges by Sex", x = "Sex", y = "Charges") +
   theme_eda
+
+grid.arrange(p_ch_chg, p_reg_chg, p_sex_chg, nrow = 2, ncol = 2)
 ```
 
-Medians are nearly identical; differences appear only in the extreme values, which is consistent with men having a higher smoking rate. To confirm, I test for a difference formally:
+The Southeast box reaches the highest, but recall that this region also has the highest obesity rate — so the elevated charges are likely driven by BMI rather than region per se. Medians for sex are nearly identical; differences appear only in the extreme values (consistent with men having a higher smoking rate). A Wilcoxon rank-sum test confirms no baseline difference:
 
-```{r wilcox_sex_charges}
+```{r lilliefors}
+
 medins %>% filter(sex == "female") %>% pull(charges) %>% lillie.test()
-medins %>% filter(sex == "male")   %>% pull(charges) %>% lillie.test()
+
 ```
 
-Lilliefors rejects normality for both groups, so I use the non-parametric **Wilcoxon rank-sum test**:
+Lilliefors rejects normality for both groups, so I use the non-parametric Wilcoxon rank-sum test:
 
-```{r wilcox_test}
+```{r wilcoxon}
+
 wilcox.test(charges ~ sex, data = medins)
+
 ```
 
-No significant difference in charges between sexes is found.
+# Regression Analysis
+
+## Base Model
+
+First, let's build a basic linear model using all available variables.
+
+```{r base_model}
+model_base <- lm(charges ~ age + sex + bmi + children + smoker + region, data=medins)
+
+summary(model_base)$coefficients
+summary(model_base)$adj.r.squared
+```
+
+The `lm()` function automatically encoded categorical variables into dummies (e.g., `sexmale` with female as the base). Right from the start, we get a high Adjusted $R^2$ of `r round(summary(model_base)$adj.r.squared, 4)`.
 
 ---
 
-# Linear Models
+## Interaction Effect
 
-Based on the visual analysis, the dataset clearly clusters around three groups: **(1)** obese smokers, **(2)** non-obese smokers, and **(3)** non-smokers. I'll build a simple linear model for each.
+I am introducing a helper variable `obese_smoker` that takes the value 1 for obese smokers, and 0 for everyone else.
 
-First, let me verify whether a finer BMI split (adding an overweight category) helps explain the middle band:
+> **Critical Note:** Encoding a continuous variable like `bmi` into a binary dummy is often criticized for losing information. A standard textbook approach would suggest a continuous interaction term (`bmi * smoker`) so the penalty scales smoothly with body mass. Interestingly, if you test the continuous interaction on this dataset, it actually yields a *lower* $R^2$ than our `obese_smoker` dummy. This implies that the underlying pricing mechanism isn't a smooth mathematical slope, but rather a distinct threshold effect (as the graphs suggested). The insurance companies likely apply an additional penalty multiplier only when a smoker crosses the clinical obesity threshold (BMI > 30). Thus, our dummy captures the true business logic better than a continuous interaction.
 
-```{r bmi_4cat_plot, fig.height=4.5}
-medins$bmi_category4 <- factor(
-  ifelse(medins$bmi < 18.5, "Low",
-         ifelse(medins$bmi <= 25, "Normal",
-                ifelse(medins$bmi <= 30, "Overweight", "Obese"))),
-  levels = c("Low", "Normal", "Overweight", "Obese")
-)
+```{r interaction_model}
 
-ggplot(medins, aes(x = age, y = charges, color = smoker)) +
-  geom_point(size = 2, alpha = 0.7) +
-  scale_color_manual(values = PAL_SMOKE) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  facet_wrap(~bmi_category4, ncol = 4) +
-  labs(title = "Age vs. Charges — 4-category BMI Split",
-       x = "Age", y = "Annual Charges (USD)", color = "Smoker") +
-  theme_eda
+medins$obese_smoker <- ifelse(medins$smoker=="yes" & medins$bmi_category=="High", 1, 0)
+
+model_interaction <- lm(charges ~ age + sex + bmi + children + smoker + region + obese_smoker, data=medins)
+
+summary(model_interaction)$adj.r.squared
 ```
 
-The Normal and Overweight panels look nearly identical. The 3-category split was not a mistake — lets revert to it:
-
-```{r revert_bmi}
-medins$bmi_category <- factor(
-  ifelse(medins$bmi < 18.5, "Low",
-         ifelse(medins$bmi <= 30, "Normal", "High")),
-  levels = c("Low", "Normal", "High")
-)
-```
-
-Also, one other possibility investigated before modelling — do any remaining variables (sex, region, children) explain the middle-band membership?
-
-```{r middle_band_search, fig.height=4.5}
-medins %>%
-  filter(bmi_category %in% c("Low", "Normal") | (bmi_category == "High" & smoker == "no")) %>%
-  ggplot(aes(x = age, y = charges, color = factor(children))) +
-  geom_point(size = 2.5, alpha = 0.8) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  facet_wrap(~bmi_category, ncol = 3) +
-  labs(title = "Non-obese-smoker subset — Charges coloured by Children",
-       x = "Age", y = "Annual Charges (USD)", color = "Children") +
-  theme_eda
-```
-
-No remaining variable (sex, region, or children) explains membership in the middle band. The middle group is likely driven by factors not present in this dataset — chronic conditions, family medical history, etc.
-
-```{r split_groups}
-grupa1 <- medins %>% filter(bmi_category == "High" & smoker == "yes")
-grupa2 <- medins %>% filter(bmi_category != "High" & smoker == "yes")
-grupa3 <- medins %>% filter(smoker == "no")
-```
+Thanks to this single variable, the adjusted R-squared jumped by about 11 percentage points.
 
 ---
 
-## Group 1: Obese Smokers
+## Diagnostics
 
-```{r group1_plot}
-ggplot(grupa1, aes(x = age, y = charges)) +
-  geom_point(size = 2, color = "grey50", alpha = 0.7) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Age vs. Charges — Obese Smokers",
-       x = "Age", y = "Annual Charges (USD)") +
-  theme_eda
+### Normality of Residuals
+
+```{r norm, fig.height=4}
+
+lillie.test(model_interaction$residuals)$p.value
+
+hist(residuals(model_interaction), breaks=30, col = "lightblue", border = "darkblue",
+     main = "Histogram of Residuals (Interaction Model)", xlab = "Residuals")
 ```
 
-The trend is nearly perfect apart from six high outliers. Let's inspect them:
+Everything points to the fact that the distribution of residuals is far from normal - it has a very long right tail. A common solution is taking the logarithm of the dependent variable.
 
-```{r group1_outliers}
-grupa1 %>% filter(charges > 50000 & age < 55) %>% arrange(age)
-cat("\nGroup 1 mean BMI:", round(mean(grupa1$bmi), 2))
+### Log Transformation of the Dependent Variable
+
+```{r log, fig.height=4}
+model_log <- lm(log(charges) ~ age + sex + bmi + children + smoker + region + obese_smoker, data=medins)
+
+lillie.test(model_log$residuals)$p.value
+
+hist(residuals(model_log), breaks = 30, col = "lightblue", border = "darkblue",
+     main = "Histogram of Residuals (Log Model)", xlab = "Residuals")
 ```
 
-The outliers do not share any obvious characteristic — only one has a markedly elevated BMI. These appear to be individually priced policies for reasons outside the dataset. I exclude them before modelling:
+The histogram of residuals looks much closer to a normal distribution, but normality tests still reject the hypothesis. Furthermore, its $R^2$ is noticeably lower than the previous model, although $R^2$ values between linear and log-linear models are not directly comparable. 
 
-```{r model1}
-grupa1_clean <- grupa1 %>% filter(charges < 50000 | age > 55)
+### Autocorrelation
 
-model_gr1 <- lm(charges ~ age, data = grupa1_clean)
-summary(model_gr1)
+Even though the dataset contains cross-sectional data, for the sake of completeness, I will check this assumption.
 
-ggplot(grupa1_clean, aes(x = age, y = charges)) +
-  geom_point(size = 2, color = "grey50", alpha = 0.7) +
-  geom_smooth(method = "lm", color = PAL_ORANGE, formula = y ~ x, se = TRUE) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Linear Model — Obese Smokers",
-       x = "Age", y = "Annual Charges (USD)") +
-  theme_eda
+```{r autocor, fig.height=6}
+dwtest(model_interaction)$p.value
+dwtest(model_log)$p.value
 
-reszty1 <- residuals(model_gr1)
-shapiro.test(reszty1)
-qqnorm(reszty1); qqline(reszty1, col = PAL_ORANGE)
-hist(reszty1, col = PAL_GREEN, border = "white",
-     main = "Residuals — Group 1", xlab = "Residuals")
+par(mfrow = c(2, 2))
+
+acf(model_interaction$residuals, main = "ACF - Linear Model")
+acf(model_log$residuals,         main = "ACF - Log Model")
+
+pacf(model_interaction$residuals, main = "PACF - Linear Model")
+pacf(model_log$residuals,         main = "PACF - Log Model")
+
+par(mfrow = c(1, 1))
 ```
 
-Age alone explains **`r round(summary(model_gr1)$r.squared * 100, 2)`%** of charge variance in this group. Residuals are not perfectly normal (right tail visible), so the model is more useful as a trend visualiser than a precise predictor.
+The Durbin-Watson test and the ACF plots confirm the lack of autocorrelation in both cases. The values presented on the PACF plots cross the significance interval a few times, but this is not surprising with as many as 30 comparisons (we expect a Type I error in 5 out of 100 cases).
+
+### Heteroscedasticity
+
+```{r heteroscedasticity}
+bptest(model_interaction)$p.value
+bptest(model_log)$p.value
+```
+
+For the model with the interaction, the Breusch-Pagan test found no grounds to reject the hypothesis of homoscedasticity. It is different for the model with the logarithm - here the p-value is very low, indicating heteroscedasticity.
+
+### Model Comparison - PE Test
+
+The MacKinnon-White-Davidson PE test allows to address the issue of incomparability of R^2s between linear and log-linear models. The idea behind the test is to take the linear model and add an additional explanatory variable: the difference between the predictions from the log model and the logged predictions from the linear model. Analogously, for the log model, it adds the difference between the predictions from the linear model and the exponentially transformed predictions from the log model. It then performs two tests, assuming the correctness of each model.
+
+```{r petest}
+petest(model_interaction, model_log)
+```
+
+In both tests, the hypothesis about the correctness of the examined model was rejected, but with much greater certainty for the logarithmic model. Therefore, the only advantage of the log model is that its residuals look slightly closer to normality (which tests don't even confirm). With this sample size, according to the Central Limit Theorem, non-normal residuals do not invalidate statistical inference. Because of this and the heteroscedasticity exhibited by the log model, I will adopt the **linear model (with interaction)** for further analysis.
+
+### Model Specification Error Test
+
+The final element of this section is performing the Ramsey RESET test - checking whether we have omitted a polynomial relationship (I will check powers 2 and 3).
+
+```{r reset}
+resettest(model_interaction, 3)$p.value
+```
+
+The RESET test found no grounds to reject the hypothesis of correct model specification.
 
 ---
 
-## Group 2: Non-obese Smokers
+## Dimensionality Reduction
 
-```{r group2_plot}
-ggplot(grupa2, aes(x = age, y = charges)) +
-  geom_point(size = 2, color = "grey50", alpha = 0.7) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Age vs. Charges — Non-obese Smokers",
-       x = "Age", y = "Annual Charges (USD)") +
+### AIC
+
+To reduce the number of explanatory variables, I will use the **backward stepwise method** based on the **Akaike Information Criterion (AIC)**.
+
+```{r step_aic}
+aic_model <- step(model_interaction, direction="backward", trace=0)
+formula(aic_model)
+```
+
+The AIC-based method does not reject any variables.
+
+### BIC
+
+Now, I will run the same process based on the stricter **Bayesian Information Criterion (BIC)**.
+
+```{r step_bic}
+bic_model <- step(model_interaction, direction="backward", k=log(length(model_interaction$fitted.values)), trace=0)
+formula(bic_model)
+```
+
+The result is completely different. The rejected variables are, consecutively: **region, sex, and BMI**. The last one is initially surprising since the EDA showed how important this indicator is. However, the plots showed that obese individuals differ significantly from those with underweight and normal mass - and the impact of obesity is already captured by the interaction variable (`obese_smoker`).
+
+### VIF 
+
+The **Variance Inflation Factor (VIF)** will allow us to confirm the hypothesis from the previous sentence by checking multicollinearity among the explanatory variables.
+
+```{r vif, fig.height=4}
+vif_values <- vif(model_interaction)
+
+data.frame(variable = rownames(vif_values), vif = vif_values[,1]) %>%
+  ggplot(aes(x = reorder(variable, vif), y = vif)) +
+  geom_col(fill = "lightblue", color = "darkblue") +
+  geom_hline(yintercept = 3, lty = 2, color = "red") +
+  labs(title = "Variance Inflation Factor (VIF)", x = "Variable", y = "VIF") +
   theme_eda
 ```
 
-The structure mirrors Group 1, with ~7 outliers. Inspecting them:
+Indeed, the index takes the highest value for the `obese_smoker` variable. This is expected, as it is a variable derived directly from `bmi` and `smoker`. While it doesn't approach a value of 3 (where multicollinearity becomes a problem), it allows us to suspect that the informational value of the `bmi` variable is already contained within `obese_smoker`.
 
-```{r group2_outliers}
-grupa2 %>%
-  filter((charges > 25000 & age < 40) | (charges > 30000 & age < 55)) %>%
-  arrange(age)
-cat("\nGroup 2 mean BMI:", round(mean(grupa2$bmi), 2))
+### Adjusted R-Squared Validation
+
+To compare the results suggested by AIC and BIC, I will run the reduction process manually, based on the adjusted $R^2$ value.
+
+There is a problem right away - the `regionnorthwest` dummy is the least significant, but it was created automatically by the `lm()` function. I can estimate the model without the entire `region` variable, but this will result in losing the information carried by `regionsoutheast` and `regionsouthwest`. To verify the validity of this move, I will run an F-test comparing nested models.
+
+```{r test_F}
+anova(lm(charges ~ age + sex + bmi + children + smoker + obese_smoker, data=medins), model_interaction)$"Pr(>F)"[2]
 ```
 
-Again, no shared characteristic. Excluding and modelling:
+The obtained p-value suggests that the `region` variable significantly contributes to improving the model. However, let's see how the adjusted $R^2$ changes when I sequentially drop the variables suggested by the BIC.
 
-```{r model2}
-grupa2_clean <- grupa2 %>%
-  filter(charges < 25000 | (charges < 30000 & age > 40) | age > 55)
-
-model_gr2 <- lm(charges ~ age, data = grupa2_clean)
-summary(model_gr2)
-
-ggplot(grupa2_clean, aes(x = age, y = charges)) +
-  geom_point(size = 2, color = "grey50", alpha = 0.7) +
-  geom_smooth(method = "lm", color = PAL_ORANGE, formula = y ~ x, se = TRUE) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Linear Model — Non-obese Smokers",
-       x = "Age", y = "Annual Charges (USD)") +
-  theme_eda
-
-reszty2 <- residuals(model_gr2)
-shapiro.test(reszty2)
-qqnorm(reszty2); qqline(reszty2, col = PAL_ORANGE)
-hist(reszty2, col = PAL_GREEN, border = "white",
-     main = "Residuals — Group 2", xlab = "Residuals")
+```{r step_r2}
+summary(lm(charges ~ age + sex + bmi + children + smoker + obese_smoker, data=medins))$adj.r.squared
+summary(lm(charges ~ age + bmi + children + smoker + obese_smoker, data=medins))$adj.r.squared
+summary(lm(charges ~ age + children + smoker + obese_smoker, data=medins))$adj.r.squared
 ```
 
-Model 2 performs even better, explaining **`r round(summary(model_gr2)$r.squared * 100, 2)`%** of variance, and Shapiro-Wilk does not reject normality of residuals. Provided a person can be confidently classified outside the outlier cluster, this model could be used for prediction.
+I gave up as many as 3 variables (including two statistically significant ones), and the adjusted $R^2$ dropped by barely a tenth of a percentage point. I will save this reduced model as the optimal one.
 
 ---
 
-## Group 3: Non-smokers
+## Final Model Interpretation
 
-```{r group3_plot}
-ggplot(grupa3, aes(x = age, y = charges)) +
-  geom_point(size = 2, color = "grey50", alpha = 0.3) +
-  scale_y_continuous(labels = scales::dollar_format()) +
-  labs(title = "Age vs. Charges — Non-smokers",
-       x = "Age", y = "Annual Charges (USD)") +
-  theme_eda
+```{r final_model}
+model_final <- lm(charges ~ age + children + smoker + obese_smoker, data=medins)
+
+stat <- glance(model_final)
+summary(model_final)$coefficients
+
+cat("Adjusted R-squared:", round(stat$adj.r.squared, 4), "\n")
 ```
 
-The non-smoker scatter shows a very tight, slightly convex trend at the bottom. The regularity of point alignment may reflect that the insurer records age with monthly precision while the dataset stores only integer years. Points above this dense band likely reflect individually assessed risks — chronic conditions, family history — that are absent from the dataset.
+The model explains **`r round(summary(model_final)$adj.r.squared*100, 2)`%** of the variance in the dependent variable. The F-statistic leaves no doubt about the joint significance of all explanatory variables, and the p-values for the t-tests are very close to zero in each case. 
 
----
+Because there are no logarithms on either side of the equation, I interpret the estimated parameters according to their units (all conclusions assume *ceteris paribus*):
 
-# Conclusions
+- The **intercept** can be interpreted as a base premium (though negative), and every additional year of life, child, and being a smoker and/or obese acts as an additional charge.
+- For each **additional year of life**, the premium increases by an average of **$267**.
+- Each **additional child** causes an average premium increase of **$503**.
+- **Smokers** pay an average of **$13,325** more in premiums.
+- If smoking is combined with obesity (**obese smokers**), the additional "penalty" reaches as high as **$20,000**.
 
-The analysis leaves little doubt about the primary drivers of insurance charges: **age, smoker status, and obesity**. The data naturally cluster around three pricing bands, and no variable in the dataset explains membership in the intermediate band, suggesting that unobserved factors — such as chronic illness or family medical history — account for the variance there.
-
-Three simple linear models based on age alone achieve a good fit within each cluster, with the non-obese smoker model also satisfying normality of residuals. A fuller predictive model would benefit from richer health data beyond the seven variables available here.
