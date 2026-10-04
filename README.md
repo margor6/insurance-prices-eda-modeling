@@ -1,4 +1,4 @@
-# Medical Insurance Prices - Exploratory Data Analysis
+# Medical Insurance Prices - EDA & Econometric Modeling
 
 ![R](https://img.shields.io/badge/R-4.0%2B-blue)
 ![RMarkdown](https://img.shields.io/badge/Document-RMarkdown-orange)
@@ -6,13 +6,13 @@
 
 ## Overview
 
-The project presents an Exploratory Data Analysis (EDA) of medical insurance prices using **RMarkdown**. The goal was to investigate how various factors, such as age, BMI, smoking status, and region, **affect insurance charges**. 
+This project combines Exploratory Data Analysis (EDA) and econometric modeling of medical insurance prices using **RMarkdown**. The goal was to investigate how factors like age, BMI, and smoking status affect insurance charges, and to build a statistical model to explain and predict these costs.
 
-The analysis discovers significant correlations, particularly the impact of lifestyle habits on medical costs, and discusses limitations within the dataset (e.g., lack of medical history).
+The analysis discovers significant correlations and concludes with a linear regression model tailored to the underlying pricing mechanics.
 
 ## Dataset
 
-The analysis uses the personal health dataset, which contains data for **1,338 people**.
+The analysis uses the medical charges dataset, which contains data for **1,338 people**.
 
 **Dataset's Columns:**
 * `age`: Age of the person.
@@ -25,21 +25,22 @@ The analysis uses the personal health dataset, which contains data for **1,338 p
 
 ## Tech
 * **Core:** R 
-* **Libraries:** `tidyverse`, `ggplot2`, `psych`, `mice`, `corrplot`, `gridExtra`, `nortest`, `car`, `PMCMRplus`.
+* **Libraries:** `tidyverse`, `ggplot2`, `psych`, `mice`, `corrplot`, `gridExtra`, `nortest`, `car`, `PMCMRplus`, `lmtest`, `broom`.
 * **Format:** RMarkdown report generated to HTML.
 
 ## Key Findings
-* **Smoking Impact:** Being a smoker is the strongest predictor of higher insurance charges.
-* **Age Factor:** Charges generally increase with age, showing a linear trend for non-smokers.
-* **BMI Correlation:** High BMI significantly increases costs, but primarily for smokers (interaction effect).
-* **Data Limitations:** The analysis deduces that unobserved variables (likely chronic diseases or family's medical history) play a major role in pricing, creating distinct clusters in the data that variables included in the dataset cannot fully explain.
+* **Smoking Impact:** Being a smoker is the strongest single predictor of higher insurance charges.
+* **Age Factor:** Charges strictly increase with age, adding an average of $267 per year of life.
+* **The Obesity-Smoking Penalty:** High BMI significantly increases costs, but primarily for smokers. The econometric model reveals a massive ~$20,000 threshold "penalty" for crossing into clinical obesity as a smoker.
+* **Model Performance:** The final reduced linear model explains over **86% of the variance** in insurance charges using just four predictors.
+* **Data Limitations:** The analysis deduces that unobserved variables (likely chronic diseases or family's medical history) play a major role in pricing, creating distinct clusters in the middle-cost band that the available dataset cannot fully explain.
 
-<img width="1083" height="507" alt="image" src="https://github.com/user-attachments/assets/c1fc5b85-715b-4416-9a0a-f64b657b5012" />
+<img width="880" height="423" alt="image" src="https://github.com/user-attachments/assets/15bca84d-9595-4130-b818-b0d959435333" />
 
 
 # How to View
 
-You can view the report directly on GitHub:
-**[Click here to view the Analysis](https://margor6.github.io/medical-insurance-prices-eda/medical_insurance_eda.html)**
+You can view the full report directly via GitHub Pages:
+**[Click here to view the Analysis & Model](https://margor6.github.io/insurance-prices-eda-modeling/medical_insurance_eda.html)**
 
 ## Author: Marcin Górski
