@@ -41,6 +41,6 @@ The analysis uses the medical charges dataset, which contains data for **1,338 p
 # How to View
 
 You can view the full report directly via GitHub Pages:
-**[Click here to view the Analysis & Model](https://margor6.github.io/insurance-prices-eda-modeling/medical_insurance_eda.html)**
+**[Click here to view the Analysis & Model](https://margor6.github.io/insurance-prices-eda-modeling/insurance_eda_modeling.html)**
 
 ## Author: Marcin Górski
